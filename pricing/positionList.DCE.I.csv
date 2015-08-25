@@ -1,0 +1,6 @@
+expiry_month,selected,strike_price,type,style,position
+1501,TRUE,550,call,vanilla,10
+1509,TRUE,515,call,vanilla,1
+1509,TRUE,515,call,geometric,1
+1509,TRUE,515,put,vanilla,1
+1509,TRUE,515,put,geometric,1

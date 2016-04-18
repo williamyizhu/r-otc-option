@@ -2,7 +2,7 @@
 # TODO: Add comment
 ##############################################################################################################################################################
 #print(paste(getwd(), "/position_greeks.R", sep=""))
-source(paste(getwd(), "/option_mc.R", sep=""), local=TRUE, echo=FALSE, encoding="GBK")
+#source(paste(getwd(), "/option_mc.R", sep=""), local=TRUE, echo=FALSE, encoding="GBK")
 
 for (i in names(.GlobalEnv$position_list)) {	
 #	".GlobalEnv$position_list" may contain complete.cases()==FALSE entry, only include complete.cases()==TRUE entry, in order to make sure the calculation of theo_vol and theo valid
@@ -13,7 +13,7 @@ for (i in names(.GlobalEnv$position_list)) {
 #		initial values for delta and vega related variables
 		temp[,c("value","delta","vega","position_delta","position_vega")] = 0		
 		for (j in 1:dim(temp)[1]) {		
-			if ((temp[j,]$type=="call")|(temp[j,]$type=="put")) {
+			if ((temp[j,]$type=="call") | (temp[j,]$type=="put")) {
 #				".GlobalEnv$paramList" is synced, "p_" is for position, v.s. "r_" is for reference				
 				for (k in rownames(.GlobalEnv$paramList)) {
 					if ((.GlobalEnv$paramList[k,]$type=="gspinbutton") | (.GlobalEnv$paramList[k,]$type=="gslider")) {	
@@ -35,7 +35,7 @@ for (i in names(.GlobalEnv$position_list)) {
 					opt = AsianOption(averageType="geometric", as.character(temp[j,]$type), p_f_atm, temp[j,]$strike_price, 0, risk_free_interest, days_to_maturity/365, p_vol_theo$theo)
 				} else if (temp[j,]$style=="arithmetic") {
 #					OptionMC_vec("arithmetic", S, X, r, q, cDays, volatility, nSims, minSteps, avgRuns, c("sigma","call_value","call_delta","put_value","put_delta"))					
-					opt = OptionMC_vec("arithmetic", p_f_atm, temp[j,]$strike_price, risk_free_interest, 0, days_to_maturity, p_vol_theo$theo, nSims, minSteps, avgRuns, c("call_value","call_delta","call_vega","put_value","put_delta","put_vega"))					
+					opt = OptionMCv("arithmetic", p_f_atm, temp[j,]$strike_price, risk_free_interest, 0, days_to_maturity, p_vol_theo$theo, nSims, minSteps, avgRuns)					
 					opt$value = opt[paste(as.character(temp[j,]$type),"value",sep="_")]
 					opt$delta = opt[paste(as.character(temp[j,]$type),"delta",sep="_")]
 					opt$vega = opt[paste(as.character(temp[j,]$type),"vega",sep="_")]
@@ -44,7 +44,7 @@ for (i in names(.GlobalEnv$position_list)) {
 				}						
 #				add "value", "delta" and "vega" to the "temp" data.frame
 				temp[j, c("value","delta","vega")] = c(opt$value, opt$delta, opt$vega)								
-			} else if ((temp[j,]$type=="future")|(temp[j,]$type=="cash")) {
+			} else if ((temp[j,]$type=="future") | (temp[j,]$type=="cash")) {
 				temp[j, c("value","delta","vega")] = c(0, 1, 0)
 			} else {
 				print(paste("unknow type: ", paste(colnames(temp[j,]), temp[j,], sep="=", collapse=" | "), sep=""))

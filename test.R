@@ -9,6 +9,51 @@ library("fAsianOptions")
 library("fOptions")
 source(paste(getwd(), "/option_mc.R", sep=""), echo=FALSE, encoding="GBK")
 
+#=============================================================================================================================================================
+# TODO # OptionMC2, deprecated
+#=============================================================================================================================================================
+#OptionMCApply(cDaysIndex, style, S_vec, X, r, q, volatility, nSims, minSteps=500, rValue=c("path","sigma","call_value","call_delta","put_value","put_delta"))
+source(paste(getwd(), "/option_mc.R", sep=""), echo=FALSE, encoding="GBK")
+
+#number of simulation runs
+nSims = 1000
+X = 3000
+r = 0.
+q = 0.
+volatility = 0.25
+option_style = "arithmetic"
+
+#starting point
+S0 = 3000
+#drift term
+mu = r - q
+#every trading day increment 
+dt = 1 / 365	
+#standard normal distribution random number
+z = rnorm(29, mean=0, sd=1)	
+#generate log-normal return matrix
+return_vec = exp((mu - 0.5 * volatility ^ 2) * dt + volatility * sqrt(dt) * z)
+#existing price path
+S = c(S0, S0 * cumprod(return_vec))
+
+#"OptionMCApply", let "minSteps=1", otherwise, default value "minSteps=500"
+cDaysIndex = matrix(1:length(S))
+optionMC = apply(cDaysIndex, 1, OptionMC2, option_style, S, X, r, q, volatility, nSims)
+
+par(mfrow=c(5,6))
+for (i in 1:length(optionMC)) {
+#	mean of existing price path
+	if (option_style == "arithmetic") {
+		S_mean = mean(S[1:i])
+	} else if (option_style == "geometric") {
+		S_mean = exp(mean(log(S[1:i])))
+	}	
+	matplot(optionMC[[i]]$path, type='l', xlab=paste("X=", X, ", mean=", round(S_mean,4), ", sigma=", round(optionMC[[i]]$sigma,4), sep=""))
+	title(paste("call value =", round(unlist(optionMC[[i]]["call_value"]),4), "delta =", round(unlist(optionMC[[i]]["call_delta"]),4), "\nput value =", round(unlist(optionMC[[i]]["put_value"]),4), "delta =", round(unlist(optionMC[[i]]["put_delta"]),4), sep=" "))
+}
+
+
+
 
 length(ex1 <- expression(1 + 0:9)) # 1
 ex1
@@ -18,46 +63,6 @@ length(ex3 <- expression(u, v, 1+ 0:9)) # 3
 mode(ex3 [3])   # expression
 mode(ex3[[3]])  # call
 rm(ex3)
-
-#--------------------------------------------------- apply ---------------------------------------------------
-xyz = function(a, b) {
-	x = sum(a) + b
-	y = b
-	list(x=x, y=y)
-}
-
-xx = matrix(rep(1:3,10),ncol=10)
-
-
-
-apply(b=xx, 1, xyz, a=c(10,20))
-
-
-mm = function(rvalue) {
-
-	
-	m=list(a=1,b=2,c=3)
-	
-	eval(parse(text=paste("list(", paste(rvalue, "=m$", rvalue, sep="", collapse=","), ")", sep="")))
-	 
-
-	
-#	eval(parse(text="list(a=a, b=b, c=c)"))
-	
-#	eval(expression(list(a=a, b=b, c=c)))
-}
-
-rvalue = c("b", "c")
-
-mm(rvalue) 
-
-eval(2 ^ 2 ^ 3)
-mEx <- expression(2^2^3)
-mEx
-1 + eval(mEx)
-eval({ xx <- pi; xx^2})
-xx
-
 
 #--------------------------------------------------- apply ---------------------------------------------------
 require(stats)
@@ -392,10 +397,183 @@ sapply(1:ncol(model), function(j) {
 					}, data=list(model=model, column=j))
 		})
 
-## How to add within a gWidgets GUI
-w <- gwindow("test")
-g <- ggroup(cont=w)
-add(g, sw, expand=TRUE)
+Sys.setlocale(locale="chs")
+library(gridExtra)
+png(filename = "output1.png", width=480,height=480) 
+ss=read.csv("mg.txt", header=FALSE)
+#grid.table(ss) 
+tableGrob(ss)
+dev.off() 
+Sys.setlocale(locale="us")
 
 
 
+.GlobalEnv$grs = option_mm_list2
+
+Sys.setlocale(locale="chs")
+
+library(grid)
+library(gridExtra)
+png(filename = "output1.png", width=980, height=980) 
+ss = read.csv("mg.txt", header=FALSE)
+#png(filename = "output1.png") 
+grid.text(ss)
+#ss=read.csv("mg.txt", header=FALSE)
+#grid.table(grs[["put"]][["vanilla"]]) 
+#grid.text("aaaaa")
+dev.off() 
+
+#============================================================================================================================================
+
+Sys.setlocale(locale="us")
+
+png(filename = "output1.png", width=980, height=980) 
+write.table("aa", "output1.png", append=TRUE, quote=FALSE, sep="\t", row.names=FALSE, col.names=FALSE)	
+#png(filename = "output1.png") 
+
+#ss=read.csv("mg.txt", header=FALSE)
+grid.table(grs[["put"]][["vanilla"]]) 
+grid.table(grs[["call"]][["vanilla"]]) 
+
+#tableGrob(ss)
+dev.off() 
+
+library(gridExtra)
+grid.table(c("a","b"))
+
+library(grid)
+g <- tableGrob(head(iris, 3))
+m <- tableGrob(tail(iris, 3))
+grid.arrange(gList(g,m))
+grid.newpage()
+grid.draw(gList(g,m),gpar(byrow=TRUE))
+
+Sys.setlocale(locale="chs")
+ss = "我们 "
+sg <- tableGrob(ss)
+grid.draw(sg)
+
+
+library(grid)
+grid.arrange(rectGrob(), rectGrob())
+
+## Not run:
+library(ggplot2)
+pl <- lapply(1:11, function(.x) qplot(1:10, rnorm(10), main=paste("plot", .x)))
+ml <- marrangeGrob(pl, nrow=2, ncol=2)
+## non-interactive use, multipage pdf
+ggsave("multipage.pdf", ml)
+## interactive use; open new devices
+ml
+## End(Not run)
+
+
+
+
+
+
+library(grid)
+library(gtable)
+
+
+library(gridExtra)
+title <- textGrob("----------------------------------------------------------------------------------", x=0)
+title2 <- textGrob("我们是社会", x=0)
+table <- tableGrob(head(iris))
+table2 <- tableGrob(tail(iris), rows=NULL)
+
+ml=marrangeGrob(gList(title, title, table, table2),ncol=1,nrow=4)
+ggsave("multipage.jpg", ml)
+
+
+#table <- gtable_add_rows(table, heights = grobHeight(footnote2) + padding)
+table <- gtable_add_grob(table, list(table2), t=c(1,2), l=c(2,2))
+grid.newpage()
+grid.draw(table)
+
+title <- textGrob("----------------------------------------------------------------------------------", x=0)
+footnote1 <- textGrob("footnote1", x=0, hjust=0, gp=gpar( fontface="italic"))
+footnote2 <- textGrob("footnote2", x=0, hjust=0, gp=gpar( fontface="italic"))
+padding <- unit(0.5,"line")
+table <- gtable_add_rows(table, heights = grobHeight(title) + padding, pos = 0)
+table <- gtable_add_rows(table, heights = grobHeight(footnote1) + padding,pos=0)
+table <- gtable_add_rows(table, heights = grobHeight(footnote2) + padding)
+
+table <- gtable_add_grob(table, list(title, footnote1, footnote2), t=c(1,2, nrow(table)), l=c(2,2,1),r=ncol(table))
+grid.newpage()
+grid.draw(table)
+
+
+library(gridExtra)
+
+a1 = textGrob("-------------------------------------------")
+a2 = textGrob("一切都在不严重")
+
+hh <- tableGrob(head(iris), rows=NULL, cols=c("今天","每天","需要","我们","吃饭"))
+tt <- tableGrob(tail(iris), rows=NULL, cols=c("天","天","需要","们","吃饭"))
+#grid.arrange(a1,hh,a1,a2,tt)
+				
+padding <- unit(1,"line")
+hh <- gtable_add_rows(hh, heights = grobHeight(a1) + padding, pos = 0)
+hh <- gtable_add_grob(table, hh)
+
+grid.newpage()
+grid.draw(table)
+
+library(gridExtra)
+d <- head(iris)
+table <- tableGrob(d)
+
+library(grid)
+library(gtable)
+
+title <- textGrob("Title",gp=gpar(fontsize=50))
+footnote <- textGrob("footnote", x=0, hjust=0,
+		gp=gpar( fontface="italic"))
+
+
+table <- gtable_add_rows(table, 
+		heights = grobHeight(footnote)+ padding)
+table <- gtable_add_grob(table, list(title, footnote),
+		t=c(1, nrow(table)), l=c(1,2), 
+		r=ncol(table))
+grid.newpage()
+grid.draw(table)
+
+
+
+
+
+library(grid)
+library(gtable)
+
+title <- textGrob("Title")
+footnote <- textGrob("我们在这里")
+
+padding <- unit(0.5,"line")
+table <- gtable_add_rows(table, heights = grobHeight(title) + padding, pos = 0)
+table <- gtable_add_rows(table, heights = grobHeight(footnote)+ padding)
+table <- gtable_add_grob(table, list(title, footnote), t=c(1, nrow(table)), l=c(1,2), r=ncol(table))
+
+grid.newpage()
+grid.draw(table)
+
+grid.arrange(title, table,footnote)
+
+library(ggplot2)
+ggsave("saving.png", table)
+
+
+dd <- head(iris)
+colnames(dd) = c("今天","每天","需要","我们","吃饭")
+
+aa = textGrob("我们在这里")
+mg = tableGrob(dd)
+mg <- gtable_add_grob(mg, list(aa))
+
+
+grid.arrange(list(aa,mg), newpage=TRUE)
+
+l <- linesGrob()
+## Draw it
+grid.draw(l)

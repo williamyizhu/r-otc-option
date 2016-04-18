@@ -1,8 +1,156 @@
 ############################################################################################################################################################
-# TODO # Add comment
+# TODO # parameters
 ############################################################################################################################################################
 #"volatility" is calculated based on "sqrt(252 * mean(log_return^2))", where "log_return = diff(log(settlement), lag=1)"
 #therefore, "number_of_volatility_days" is not a determint factor, when it comes to calculation of "volatility"
+
+contract_symbol = toupper(paste(exchange, underlying, contract_year_month, sep="."))
+contract_date = Sys.Date()
+settlement_date = contract_date + days_to_maturity
+
+option_type = c("call", "put")
+option_type_chs = c("看涨", "看跌")
+option_style_all = c("vanilla", "geometric", "arithmetic")
+
+#convert option_style from english to chinese, use "geometric" results to approximate "arithmetic" results
+option_style_index = apply(matrix(option_style), 1, function(a,b){which(b==a)}, option_style_all)
+option_style_chs = c("最后交易日结算价", "期限内交易日结算价几何平均值", "期限内交易日结算价算数平均值")
+option_style_chs = c("最后交易日结算价", "期限内交易日结算价算数平均值", "期限内交易日结算价算数平均值")
+
+#strike price rounding digit
+strike_rounding_digit = 0
+
+############################################################################################################################################################
+# TODO # calculate option price matrix and print results to screen
+############################################################################################################################################################
+print("---------------------------------------------------------------------------")
+print(paste("contract date =", contract_date, "|", "symbol =", contract_symbol, "|", "days to maturity =", days_to_maturity))
+print(paste("settlement date =", settlement_date, "|", "atm =", f_atm, "|", "risk free interest =", risk_free_interest))
+
+pricing_matrix_list = list()
+for (k in option_type) {
+#-------------------------------------- generate price matrix, which contains X --------------------------------------		
+#	first option strike	
+	if (k == "call") {
+		x1 = 1 + seq(x1_itm_otm_pct[2],-x1_itm_otm_pct[1],-1) * x1_itm_otm_pct[3]
+	} else if (k == "put") {
+		x1 = 1 + seq(x1_itm_otm_pct[1],-x1_itm_otm_pct[2],-1) * x1_itm_otm_pct[3]
+	} else {		
+	}
+#	second option strike
+	x2_pct_chg = seq(1:x2_itm_otm_pct[2]) * x2_itm_otm_pct[3]
+#	generate "strike percentage matrix"	
+	strike_pct_matrix = cbind(matrix(x1), apply(matrix(x2_pct_chg), 1, function(a,b,k){b+ifelse(k=="call",1,-1)*a}, x1, k))
+	colnames(strike_pct_matrix) = c("x1(100%~ )", paste("x2(", ifelse(k=="call","+","-"), round(x2_pct_chg*100,2), "%)", sep=""))	
+	rownames(strike_pct_matrix) = paste(round((x1-1)*100), "%", sep="")
+#	convert the pct into actual price, strike_matrix is different for call and put
+	strike_matrix = round(strike_pct_matrix*f_atm, strike_rounding_digit)	
+#	export "strike_matrix" to a .csv file for other uses
+	write.csv(strike_matrix, paste(getwd(), "/pricing/", paste("strike_matrix", exchange, underlying, contract_year_month, k, sep="."), ".csv", sep=""), quote=FALSE, row.names=TRUE)
+	
+#-------------------------------------- create volatility matrix (bid and ask) based on volatility model --------------------------------------		
+#	** theoretical volatility **, apply wing model to strike price vector "X_vec"
+	vol_theo = apply(matrix(strike_matrix,ncol=1), 1, volatility_wing_model, 
+			days_to_maturity, alpha, f_atm, f_ref, SSR,
+			vol_ref, VCR, slope_ref, SCR,
+			dn_cf, up_cf, put_curv, call_curv,
+			dn_sm, up_sm, dn_slope, up_slope)	
+#	extract values from "vol_theo"
+	vol_theo_vec = as.vector(sapply(vol_theo, function(x){unlist(x["theo"])}, simplify=TRUE))			
+	
+#	** bid/ask offset **
+	ba_offset = apply(matrix(strike_matrix,ncol=1), 1, volatility_wing_model, 
+			days_to_maturity, alpha, f_atm, f_ref, SSR,
+			vol_ref_offset, VCR_offset, slope_ref_offset, SCR_offset,
+			dn_cf_offset, up_cf_offset, put_curv_offset, call_curv_offset,
+			dn_sm_offset, up_sm_offset, dn_slope_offset, up_slope_offset)
+#	extract values from "ba_offset", offset must be greater than 0
+	ba_offset_vec = pmax(0, as.vector(sapply(ba_offset, function(x){unlist(x["theo"])}, simplify=TRUE)))
+	
+#	same offsets for bid and ask, need to adjust "vol_theo" level
+	theo_ask_matrix = matrix(vol_theo_vec+ba_offset_vec, nrow=dim(strike_matrix)[1])
+	theo_bid_matrix = matrix(vol_theo_vec-ba_offset_vec, nrow=dim(strike_matrix)[1])	
+#	generate volatility matrix for both bid and ask volatility
+	volatility_matrix = as.data.frame(matrix(paste(format(round(theo_bid_matrix*100,2),nsmall=2), "/", format(round(theo_ask_matrix*100,2),nsmall=2), "(", strike_matrix, ")", sep=""), nrow=dim(strike_matrix)[1], dimnames=list(rownames(strike_matrix),colnames(strike_matrix))))
+
+	print("---------------------------------------------------------------------------")
+	print(paste("option type =", k, "| volatility pricing %"))
+	print("---------------------------------------------------------------------------")
+	print(volatility_matrix)
+	
+#-------------------------------------- calculate option price matrix, let S = f_atm --------------------------------------	
+#	EuropeanOption("call", f_atm, 2951, 0, risk_free_interest, days_to_maturity/365, pricing_volatility_adj_vec[1])
+	for (j in option_style) {
+#		calculate theoretical prices, option value of the first and second strike price
+		if (j == "vanilla") {			
+			option_ask = mapply(EuropeanOption, k, f_atm, strike_matrix, 0, risk_free_interest, days_to_maturity/365, theo_ask_matrix)
+			option_bid = mapply(EuropeanOption, k, f_atm, strike_matrix, 0, risk_free_interest, days_to_maturity/365, theo_bid_matrix)
+		} else if (j == "geometric") {
+			option_ask = mapply(AsianOption, j, k, f_atm, strike_matrix, 0, risk_free_interest, days_to_maturity/365, theo_ask_matrix)
+			option_bid = mapply(AsianOption, j, k, f_atm, strike_matrix, 0, risk_free_interest, days_to_maturity/365, theo_bid_matrix)
+		} else if (j == "arithmetic") {		
+			mm = mapply(OptionMCv, j, f_atm, strike_matrix, risk_free_interest, 0, days_to_maturity, theo_ask_matrix, nSims, minSteps, avgRuns)
+			nn = mapply(OptionMCv, j, f_atm, strike_matrix, risk_free_interest, 0, days_to_maturity, theo_bid_matrix, nSims, minSteps, avgRuns)
+			option_ask = rbind(mm, value=mm[paste(k,"value",sep="_"),])			
+			option_bid = rbind(nn, value=nn[paste(k,"value",sep="_"),])
+		} else {			
+		}
+		
+#		extract "value" from "option_ask" and "option_bid"
+		option_ask_matrix = matrix(unlist(option_ask["value",]), nrow=dim(strike_matrix)[1])
+		option_bid_matrix = matrix(unlist(option_bid["value",]), nrow=dim(strike_matrix)[1])
+#		calculate the spread matrix, option_ask_matrix[,1] and option_bid_matrix[,1] are plain vanilla option prices
+#		market maker long option spread = buy @ bid and sell @ offer
+#		option_spread_ask = pmax(cbind(option_ask_matrix[,1], apply(as.matrix(option_bid_matrix[,-1]), 2, function(a,b){b-a}, option_ask_matrix[,1])), 0)	
+#		option_spread_bid = pmax(cbind(option_bid_matrix[,1], apply(as.matrix(option_ask_matrix[,-1]), 2, function(a,b){b-a}, option_bid_matrix[,1])), 0)
+#		market maker long option spread = buy @ bid and sell @ bid, better pricing for customer
+		option_spread_ask = pmax(cbind(option_ask_matrix[,1], apply(as.matrix(option_ask_matrix[,-1]), 2, function(a,b){b-a}, option_ask_matrix[,1])), 0)	
+		option_spread_bid = pmax(cbind(option_bid_matrix[,1], apply(as.matrix(option_bid_matrix[,-1]), 2, function(a,b){b-a}, option_bid_matrix[,1])), 0)
+		
+#		generate pricing matrix
+		strike_matrix_range = cbind(paste(strike_matrix[,1],"~ ",sep=""), matrix(paste(strike_matrix[,1],"~",strike_matrix[,-1],sep=""),nrow=dim(strike_matrix)[1]))
+		pricing_matrix = as.data.frame(matrix(paste(format(round(option_spread_bid,2),nsmall=2), "/", format(round(option_spread_ask,2),nsmall=2), "(", strike_matrix_range, ")", sep=""), nrow=dim(strike_matrix)[1], dimnames=list(rownames(strike_matrix),colnames(strike_matrix))))
+#		save result to a list, both "call" and "put", export to a file
+		pricing_matrix_list[[k]][[j]] = pricing_matrix
+		
+		print("---------------------------------------------------------------------------")
+		print(paste("option type =", k, "|", "option style =", j))
+		print("---------------------------------------------------------------------------")
+		print(pricing_matrix)		
+	}	
+}
+
+############################################################################################################################################################
+# TODO # export to a file
+############################################################################################################################################################
+#e.g., file name "pricing_DCE.M.1501_2014-08-26。txt", only 1 pricing file per day
+fpath = paste(getwd(), "/pricing/", "pricing_", contract_symbol, "_", contract_date, ".txt", sep="")
+if (file.exists(fpath)) {
+	file.remove(fpath)	
+}
+
+sepstr = paste(rep("-",30*(x2_itm_otm_pct[2]+1)), collapse="")
+write.table(sepstr, fpath, append=TRUE, quote=FALSE, sep="\t", row.names=FALSE, col.names=FALSE)
+write.table(paste("报价日期 =", contract_date, "|", "合约 =", contract_symbol, "|", "结算价 =", f_atm), fpath, append=TRUE, quote=FALSE, sep="\t", row.names=FALSE, col.names=FALSE)
+write.table(paste("结算日期 =", settlement_date, "|", "期限 =", days_to_maturity, "天"), fpath, append=TRUE, quote=FALSE, sep="\t", row.names=FALSE, col.names=FALSE)
+
+for (i in 1:length(option_type)) {
+	for (j in 1:length(option_style_index)) {
+		write.table(sepstr, fpath, append=TRUE, quote=FALSE, sep="\t", row.names=FALSE, col.names=FALSE)
+		write.table(paste("类型 =", option_type_chs[i], "|", "到期结算价 =", option_style_chs[option_style_index[j]]), fpath, append=TRUE, quote=FALSE, sep="\t", row.names=FALSE, col.names=FALSE)
+		write.table(sepstr, fpath, append=TRUE, quote=FALSE, sep="\t", row.names=FALSE, col.names=FALSE)
+		write.table(paste("\t\t", colnames(pricing_matrix_list[[option_type[i]]][[option_style[j]]]), sep="", collapse=""), fpath, append=TRUE, quote=FALSE, sep="\t", row.names=FALSE, col.names=FALSE)
+		write.table(pricing_matrix_list[[option_type[i]]][[option_style[j]]], fpath, append=TRUE, quote=FALSE, sep="\t", row.names=TRUE, col.names=FALSE)		
+	}
+}
+
+
+#library(gridExtra)
+#pdf("data_output.pdf", height=11, width=8.5)
+#mg = pricing_matrix_list[["call"]][["vanilla"]]
+#colnames(mg) = c("明天","后天")
+#grid.table(mg)
+#dev.off()
 
 #rm(list=ls(all=TRUE)) 
 #exchange = "DCE"
@@ -28,54 +176,40 @@
 
 #options(width = 438L)
 #library("RQuantLib")
-source(paste(getwd(), "/option_mc.R", sep=""), local=TRUE, echo=FALSE, encoding="GBK")
+#source(paste(getwd(), "/option_mc.R", sep=""), local=TRUE, echo=FALSE, encoding="GBK")
 #need to run "Sys.setlocale(locale="chs")" before source() this file
 
-#trading calendar list for iWind
-tCalendarList = list(DCE="DCE",SHF="SHFE")
-
-############################################################################################################################################################
-# TODO # underlying contract and period
-############################################################################################################################################################
-contract_symbol = toupper(paste(exchange, underlying, contract_year_month, sep="."))
-delivery_month = substr(contract_year_month, 3, 4)
-#most recent year expressed as [20XX], and the number of years of historical data
-year_end = as.numeric(paste("20", substr(contract_year_month, 1, 2), sep=""))
-number_of_years = 10
-
-#variables inside ["C:/Users/William Yizhu/Documents/workspace/r-option/get_dataset.R"] are all local to this file
-source(paste(getwd(), "/get_dataset.R", sep=""), local=TRUE, echo=FALSE, encoding="GBK")
-print("---------------------------------------------------------------------------")
-print("head(data)")
-print("---------------------------------------------------------------------------")
-print(head(data))
-print("---------------------------------------------------------------------------")
-print("tail(data)")
-print("---------------------------------------------------------------------------")
-print(tail(data))
-
-############################################################################################################################################################
-# TODO # parameters
-############################################################################################################################################################
-option_type = c("call", "put")
-option_type_chs = c("看涨", "看跌")
-option_style_all = c("vanilla", "geometric", "arithmetic")
-
-#convert option_style from english to chinese, use "geometric" results to approximate "arithmetic" results
-option_style_index = apply(matrix(option_style), 1, function(a,b){which(b==a)}, option_style_all)
-option_style_chs = c("最后交易日结算价", "期限内交易日结算价几何平均值", "期限内交易日结算价算数平均值")
-option_style_chs = c("最后交易日结算价", "期限内交易日结算价算数平均值", "期限内交易日结算价算数平均值")
-
-#strike price rounding digit
-strike_rounding_digit = 0
+#delivery_month = substr(contract_year_month, 3, 4)
+##most recent year expressed as [20XX], and the number of years of historical data
+#year_end = as.numeric(paste("20", substr(contract_year_month, 1, 2), sep=""))
+#number_of_years = 10
+#
+##variables inside ["C:/Users/William Yizhu/Documents/workspace/r-option/get_dataset.R"] are all local to this file
+#source(paste(getwd(), "/get_dataset.R", sep=""), local=TRUE, echo=FALSE, encoding="GBK")
+#print("---------------------------------------------------------------------------")
+#print("head(data)")
+#print("---------------------------------------------------------------------------")
+#print(head(data))
+#print("---------------------------------------------------------------------------")
+#print("tail(data)")
+#print("---------------------------------------------------------------------------")
+#print(tail(data))
 
 ############################################################################################################################################################
 # TODO # volatility model
 ############################################################################################################################################################
-#use current date as the contract_date, "days_to_maturity" is calendar days, use the number of trading days, not calendar days, "+ 1" for "final_date"
-contract_date = tail(data, n=1)$date
-settlement_date = contract_date + days_to_maturity
-number_of_volatility_days = as.numeric(w.tdayscount(contract_date, settlement_date, TradingCalendar=tCalendarList[exchange])$Data[2]) + 1
+
+##trading calendar list for iWind
+#tCalendarList = list(DCE="DCE",SHF="SHFE")
+#
+##use current date as the contract_date, "days_to_maturity" is calendar days, use the number of trading days, not calendar days, "+ 1" for "final_date"
+#number_of_volatility_days = as.numeric(w.tdayscount(contract_date, settlement_date, TradingCalendar=tCalendarList[exchange])$Data[2]) + 1
+
+#ATM price, use the latest settlement price as the starting price
+#atm = tail(data, n=1)$settlement
+
+#there is no trading activities on the contract date (therefore - 1) or on weekends
+#number_of_trading_days = number_of_volatility_days - 1
 
 ##-------------------------------------- calculate historical realized volatility --------------------------------------
 #log_return = diff(log(tail(data, n=number_of_volatility_days)$settlement), lag=1)
@@ -97,131 +231,7 @@ number_of_volatility_days = as.numeric(w.tdayscount(contract_date, settlement_da
 #	hist_realized_volatility_sd = NA
 #}
 
-############################################################################################################################################################
-# TODO # calculate option price matrix and print results to screen
-############################################################################################################################################################
-#ATM price, use the latest settlement price as the starting price
-atm = tail(data, n=1)$settlement
-
-#there is no trading activities on the contract date (therefore - 1) or on weekends
-number_of_trading_days = number_of_volatility_days - 1
-
-print("---------------------------------------------------------------------------")
-print(paste("contract date =", tail(data,n=1)$date, "|", "symbol =", contract_symbol, "|", "days to maturity =", days_to_maturity))
-print(paste("atm =", atm, "|", "number of trading days =", number_of_trading_days, "|", "risk free interest =", risk_free_interest))
 #print(paste("volatility | previous = ", round(previous_realized_volatility*100,2), "% | historical = ", round(hist_realized_volatility_mean*100,2), "% (mean) ", round(hist_realized_volatility_sd*100,2), "% (sd)", sep=""))
-
-pricing_matrix_list = list()
-for (k in option_type) {
-#-------------------------------------- generate price matrix, which contains X --------------------------------------		
-#	first option strike	
-	if (k == "call") {
-		x1 = 1 + seq(x1_itm_otm_pct[2],-x1_itm_otm_pct[1],-1) * x1_itm_otm_pct[3]
-	} else if (k == "put") {
-		x1 = 1 + seq(x1_itm_otm_pct[1],-x1_itm_otm_pct[2],-1) * x1_itm_otm_pct[3]
-	} else {		
-	}
-#	second option strike
-	x2_pct_chg = seq(1:x2_itm_otm_pct[2]) * x2_itm_otm_pct[3]
-#	generate "strike percentage matrix"	
-	strike_pct_matrix = cbind(matrix(x1), apply(matrix(x2_pct_chg), 1, function(a,b,k){b+ifelse(k=="call",1,-1)*a}, x1, k))
-	colnames(strike_pct_matrix) = c("x1(100%)", paste("x2(", ifelse(k=="call","+","-"), round(x2_pct_chg*100,2), "%)", sep=""))	
-	rownames(strike_pct_matrix) = paste(round((x1-1)*100), "%", sep="")
-#	convert the pct into actual price, strike_matrix is different for call and put
-	strike_matrix = round(strike_pct_matrix*atm, strike_rounding_digit)	
-#	export "strike_matrix" to a .csv file for other uses
-	write.csv(strike_matrix, paste(getwd(), "/pricing/", paste("strike_matrix", exchange, underlying, contract_year_month, k, sep="."), ".csv", sep=""), quote=FALSE, row.names=TRUE)
-	
-#-------------------------------------- create volatility matrix (bid and ask) based on volatility model --------------------------------------		
-#	** theoretical volatility **, apply wing model to strike price vector "X_vec"
-	vol_theo = apply(matrix(strike_matrix,ncol=1), 1, volatility_wing_model, 
-			days_to_maturity, alpha, f_atm, f_ref, SSR,
-			vol_ref, VCR, slope_ref, SCR,
-			dn_cf, up_cf, put_curv, call_curv,
-			dn_sm, up_sm, dn_slope, up_slope)	
-#	extract values from "vol_theo"
-	vol_theo_vec = as.vector(sapply(vol_theo, function(x){unlist(x["theo"])}, simplify=TRUE))			
-	
-#	** bid/ask offset **
-	ba_offset = apply(matrix(strike_matrix,ncol=1), 1, volatility_wing_model, 
-			days_to_maturity, alpha, f_atm, f_ref, SSR,
-			vol_ref_offset, VCR_offset, slope_ref_offset, SCR_offset,
-			dn_cf_offset, up_cf_offset, put_curv_offset, call_curv_offset,
-			dn_sm_offset, up_sm_offset, dn_slope_offset, up_slope_offset)
-#	extract values from "ba_offset", offset must be greater than 0
-	ba_offset_vec = pmax(0, as.vector(sapply(ba_offset, function(x){unlist(x["theo"])}, simplify=TRUE)))				
-#	same offsets for bid and ask, need to adjust "vol_theo" level
-	theo_ask_matrix = matrix(vol_theo_vec+ba_offset_vec, nrow=dim(strike_matrix)[1])
-	theo_bid_matrix = matrix(vol_theo_vec-ba_offset_vec, nrow=dim(strike_matrix)[1])
-	
-#	generate volatility matrix for both bid and ask volatility
-	volatility_matrix = as.data.frame(matrix(paste(format(round(theo_bid_matrix*100,2),nsmall=2), "/", format(round(theo_ask_matrix*100,2),nsmall=2), "(", strike_matrix, ")", sep=""), nrow=dim(strike_matrix)[1], dimnames=list(rownames(strike_matrix),colnames(strike_matrix))))
-
-	print("---------------------------------------------------------------------------")
-	print(paste("option type =", k, "| volatility pricing %"))
-	print("---------------------------------------------------------------------------")
-	print(volatility_matrix)
-	
-#-------------------------------------- calculate option price matrix, let S = atm --------------------------------------	
-#	EuropeanOption("call", atm, 2951, 0, risk_free_interest, days_to_maturity/365, pricing_volatility_adj_vec[1])
-	for (j in option_style) {
-#		calculate theoretical prices, option value of the first and second strike price
-		if (j == "vanilla") {			
-			option_ask = mapply(EuropeanOption, k, atm, strike_matrix, 0, risk_free_interest, days_to_maturity/365, theo_ask_matrix)
-			option_bid = mapply(EuropeanOption, k, atm, strike_matrix, 0, risk_free_interest, days_to_maturity/365, theo_bid_matrix)
-		}
-		else if (j == "geometric") {
-			option_ask = mapply(AsianOption, j, k, atm, strike_matrix, 0, risk_free_interest, days_to_maturity/365, theo_ask_matrix)
-			option_bid = mapply(AsianOption, j, k, atm, strike_matrix, 0, risk_free_interest, days_to_maturity/365, theo_bid_matrix)
-		} else if (j == "arithmetic") {		
-			mm = mapply(OptionMC_vec, j, atm, strike_matrix, risk_free_interest, 0, days_to_maturity, theo_ask_matrix, nSims, minSteps, avgRuns)
-			nn = mapply(OptionMC_vec, j, atm, strike_matrix, risk_free_interest, 0, days_to_maturity, theo_bid_matrix, nSims, minSteps, avgRuns)
-			option_ask = rbind(mm, value=mm[paste(k,"value",sep="_"),])			
-			option_bid = rbind(nn, value=nn[paste(k,"value",sep="_"),])
-		} else {			
-		}
-#		extract "value" from "option_ask" and "option_bid"
-		option_ask_matrix = matrix(unlist(option_ask["value",]), nrow=dim(strike_matrix)[1])
-		option_bid_matrix = matrix(unlist(option_bid["value",]), nrow=dim(strike_matrix)[1])
-#		calculate the spread matrix, option_ask_matrix[,1] and option_bid_matrix[,1] are plain vanilla option prices
-		option_spread_ask = cbind(option_ask_matrix[,1], apply(option_bid_matrix[,-1], 2, function(a,b){b-a}, option_ask_matrix[,1]))			
-		option_spread_bid = cbind(option_bid_matrix[,1], apply(option_ask_matrix[,-1], 2, function(a,b){b-a}, option_bid_matrix[,1]))	
-		
-#		generate pricing matrix
-		strike_matrix_range = cbind(paste(strike_matrix[,1],"~ ",sep=""), matrix(paste(strike_matrix[,1],"~",strike_matrix[,-1],sep=""),nrow=dim(strike_matrix)[1]))
-		pricing_matrix = as.data.frame(matrix(paste(format(round(option_spread_bid,2),nsmall=2), "/", format(round(option_spread_ask,2),nsmall=2), "(", strike_matrix_range, ")", sep=""), nrow=dim(strike_matrix)[1], dimnames=list(rownames(strike_matrix),colnames(strike_matrix))))
-#		save result to a list, both "call" and "put", export to a file
-		pricing_matrix_list[[k]][[j]] = pricing_matrix
-		
-		print("---------------------------------------------------------------------------")
-		print(paste("option type =", k, "|", "option style =", j))
-		print("---------------------------------------------------------------------------")
-		print(pricing_matrix)		
-	}	
-}
-
-############################################################################################################################################################
-# TODO # export to a file
-############################################################################################################################################################
-#file name "pricing_DCE.M.1501_2014-08-26。txt", only 1 pricing file per day
-fpath = paste(getwd(), "/pricing/", "pricing_", contract_symbol, "_", as.character(tail(data,n=1)$date), ".txt", sep="")
-
-if (file.exists(fpath)) {
-	file.remove(fpath)
-} else {	
-}
-
-write.table("---------------------------------------------------------------------------", fpath, append=TRUE, quote=FALSE, sep="\t", row.names=FALSE, col.names=FALSE)
-write.table(paste("报价日期 =", tail(data,n=1)$date, "|", "合约 =", contract_symbol, "|", "结算价 =", atm, "|", "期限 =", days_to_maturity, "天"), fpath, append=TRUE, quote=FALSE, sep="\t", row.names=FALSE, col.names=FALSE)
-for (i in 1:length(option_type)) {
-	for (j in 1:length(option_style_index)) {
-		write.table("---------------------------------------------------------------------------", fpath, append=TRUE, quote=FALSE, sep="\t", row.names=FALSE, col.names=FALSE)
-		write.table(paste("类型 =", option_type_chs[i], "|", "到期结算价 =", option_style_chs[option_style_index[j]]), fpath, append=TRUE, quote=FALSE, sep="\t", row.names=FALSE, col.names=FALSE)
-		write.table("---------------------------------------------------------------------------", fpath, append=TRUE, quote=FALSE, sep="\t", row.names=FALSE, col.names=FALSE)
-		write.table(paste("\t\t", colnames(pricing_matrix_list[[option_type[i]]][[option_style[j]]]), sep="", collapse=""), fpath, append=TRUE, quote=FALSE, sep="\t", row.names=FALSE, col.names=FALSE)
-		write.table(pricing_matrix_list[[option_type[i]]][[option_style[j]]], fpath, append=TRUE, quote=FALSE, sep="\t", row.names=TRUE, col.names=FALSE)		
-	}
-}
 
 #set the locale back to "English_United States"
 #Sys.setlocale(locale="us")

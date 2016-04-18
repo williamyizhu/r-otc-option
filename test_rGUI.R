@@ -155,8 +155,3 @@ function(h, ...) {
 #If you¡¯re feeling enthusiastic, see if you can adapt this to work with CSV files, or even better a general delimited file.
 #One last trick to finish the post: You can create a GUI interface to any function using ggenericwidget. Try
 lmwidget <- ggenericwidget(lm)
-
-
-
-
-

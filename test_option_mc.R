@@ -7,12 +7,14 @@ library("RQuantLib")
 library("fExoticOptions")
 library("fAsianOptions")
 library("fOptions")
+source(paste(getwd(), "/option_mc.R", sep=""), echo=FALSE, encoding="GBK")
+
+rValue = c("sigma","call_value","put_value","call_delta","put_delta","call_vega","put_vega")
 
 #=============================================================================================================================================================
 # TODO # development in progress
 #=============================================================================================================================================================
 #----------------------------------------------------- code timing -----------------------------------------------------
-source(paste(getwd(), "/option_mc.R", sep=""), echo=FALSE, encoding="GBK")
 
 #number of simulation runs
 nSims = 50
@@ -41,11 +43,11 @@ system.time(apply(matrix(rep(option_style,100)), 1, OptionMC, S, X, r, q, cDays,
 
 
 
-OptionMC_vec(option_style, S, X, r, q, cDays, volatility, nSims, minSteps, avgRuns, c("sigma","call_value","call_delta","put_value","put_delta"))
+OptionMCv(option_style, S, X, r, q, cDays, volatility, nSims, minSteps, avgRuns, c("sigma","call_value","call_delta","put_value","put_delta"))
 
-system.time(OptionMC_vec(option_style, S, X, r, q, cDays, volatility, nSims, minSteps, avgRuns, c("sigma")))
+system.time(OptionMCv(option_style, S, X, r, q, cDays, volatility, nSims, minSteps, avgRuns, c("sigma")))
 
-system.time(OptionMC_vec(option_style, S, X, r, q, cDays, volatility, nSims, minSteps, avgRuns, c("sigma","call_value","call_delta","put_value","put_delta")))
+system.time(OptionMCv(option_style, S, X, r, q, cDays, volatility, nSims, minSteps, avgRuns, c("sigma","call_value","call_delta","put_value","put_delta")))
 
 #		
 #		optionMC1 = mapply(OptionMC, rep(option_style,100), valuation_data[1,]$settlement, strike[1], risk_free_interest, 0, days_to_maturity, pricing_volatility_adj_vec[1], nSims, minSteps, USE.NAMES=FALSE)
@@ -61,12 +63,15 @@ system.time(OptionMC_vec(option_style, S, X, r, q, cDays, volatility, nSims, min
 
 
 
-#----------------------------------------------------- simulation price path -----------------------------------------------------
+#=============================================================================================================================================================
+# TODO # option_mc.R verification code
+#=============================================================================================================================================================
+#----------------------------------------------------- simulation volatility-----------------------------------------------------
 #number of simulation runs
 nSims = 1000
 nSteps = 100
 S = 100
-r = 0
+r = 0.05
 q = 0
 volatility = 0.25
 
@@ -79,16 +84,13 @@ dt = 1 / 365 / nSteps
 #increase "nSteps" can improve convergence, even with a smaller "nSims" value
 #may need to have at least "cDays*nSims*nSteps=100000" to converge
 vol_vec = vector()
-for (cDays in 1:30) {		
+for (cDays in 30:30) {		
 #	standard normal distribution random number
-	z = rnorm(cDays*nSims*nSteps, mean=0, sd=1)	
-	
+	z = rnorm(cDays*nSims*nSteps, mean=0, sd=1)		
 #	generate log-normal return matrix
-	return_matrix = matrix(exp((mu - 0.5 * volatility ^ 2) * dt + volatility * sqrt(dt) * z), ncol=nSims)
-	
+	return_matrix = matrix(exp((mu - 0.5 * volatility ^ 2) * dt + volatility * sqrt(dt) * z), ncol=nSims)	
 #	return value: price path matrix 	
-	path = rbind(matrix(rep(S,nSims),ncol=nSims), S*apply(return_matrix,2,cumprod))
-	
+	path = rbind(matrix(rep(S,nSims),ncol=nSims), S*apply(return_matrix,2,cumprod))	
 #	calculate the volatility of path
 	vol = mean(apply(path, 2, function(x){sqrt(365*nSteps*mean(diff(log(x),n=1)^2))}))	
 	vol_vec = c(vol_vec, vol)
@@ -97,106 +99,56 @@ for (cDays in 1:30) {
 plot(vol_vec, type="l", col="blue")
 abline(h=volatility, col="black", pch=22, lty=2)
 
-#----------------------------------------------------- function test -----------------------------------------------------
-#OptionMC(style, S, X, r, q, cDays, volatility, nSims, minSteps=500, rValue=c("path","sigma","call_value","call_delta","put_value","put_delta")) 
-source(paste(getwd(), "/option_mc.R", sep=""), echo=FALSE, encoding="GBK")
+#----------------------------------------------------- mc method v.s. analytic method -----------------------------------------------------
+#OptionMC(style, S, X, r, q, cDays, volatility, nSims, minSteps=500) 
 
+nSims = 10000
+cDays = 20
+S = 100
+X = 103
+r = 0.05
+q = 0.
+volatility = 0.25
+
+#vanilla
+optionMC = OptionMC("vanilla", S, X, r, q, cDays, volatility, nSims)	
+paste(rValue, round(unlist(optionMC[rValue]),4),sep="=",collapse=" | ")
+optionMC$call_delta - optionMC$put_delta
+EuropeanOption("call", tail(S,n=1), X, 0, r, cDays/365, volatility)
+EuropeanOption("put", tail(S,n=1), X, 0, r, cDays/365, volatility)
+
+#geometric, previous path unknown
+nn = OptionMC("geometric", S, X, r, q, cDays, volatility, nSims)
+paste(rValue, round(unlist(nn[rValue]),4),sep="=",collapse=" | ")
+AsianOption(averageType="geometric", type="call", underlying=S, strike=X, dividendYield=q, riskFreeRate=r, maturity=cDays/365, volatility=volatility)
+AsianOption(averageType="geometric", type="put", underlying=S, strike=X, dividendYield=q, riskFreeRate=r, maturity=cDays/365, volatility=volatility)
+
+#----------------------------------------------------- vanilla, geometric, arithmetic -----------------------------------------------------
 nSims = 1000
-cDays = 2
-S = rep(100, 90)
+cDays = 10
 X = 100
 r = 0.
 q = 0.
 volatility = 0.25
 
-optionMC = OptionMC("vanilla", S, X, r, q, cDays, volatility, nSims)	
-#optionMC = OptionMC("arithmetic", S, X, r, q, cDays, volatility, nSims)	
-
-#head(optionMC$path)
-dim(optionMC$path)
-
-#optionMC$path[,1]
-#optionMC$call_value
-#optionMC$put_value
-
-rValue = c("call_value","put_value","call_delta","put_delta","call_vega","put_vega")
-paste(rValue, round(unlist(optionMC[rValue]),4),sep="=",collapse=" | ")
-optionMC$call_delta - optionMC$put_delta
-
-EuropeanOption("call", tail(S,n=1), X, 0, r, cDays/365, volatility)
-
-nSims = 500
-
-#number of discrete sampling points
-cDays = 0
 S = 100
-X = 103
-r = 0.
-q = 0.
-volatility = 0.25
-
 mm = OptionMC("vanilla", S, X, r, q, cDays, volatility, nSims)
+paste(rValue, round(unlist(mm[rValue]),4),sep="=",collapse=" | ")
+
+S = rep(100, 50)
 nn = OptionMC("geometric", S, X, r, q, cDays, volatility, nSims)
+paste(rValue, round(unlist(nn[rValue]),4),sep="=",collapse=" | ")
 aa = OptionMC("arithmetic", S, X, r, q, cDays, volatility, nSims)
+paste(rValue, round(unlist(aa[rValue]),4),sep="=",collapse=" | ")
 
-
-#=============================================================================================================================================================
-# TODO # OptionMC2, plot monte carlo simulated price path
-#=============================================================================================================================================================
-#OptionMCApply(cDaysIndex, style, S_vec, X, r, q, volatility, nSims, minSteps=500, rValue=c("path","sigma","call_value","call_delta","put_value","put_delta"))
-source(paste(getwd(), "/option_mc.R", sep=""), echo=FALSE, encoding="GBK")
-
-#number of simulation runs
-nSims = 1000
-X = 3000
-r = 0.
-q = 0.
-volatility = 0.25
-option_style = "arithmetic"
-
-#starting point
-S0 = 3000
-#drift term
-mu = r - q
-#every trading day increment 
-dt = 1 / 365	
-#standard normal distribution random number
-z = rnorm(29, mean=0, sd=1)	
-#generate log-normal return matrix
-return_vec = exp((mu - 0.5 * volatility ^ 2) * dt + volatility * sqrt(dt) * z)
-#existing price path
-S = c(S0, S0 * cumprod(return_vec))
-
-#"OptionMCApply", let "minSteps=1", otherwise, default value "minSteps=500"
-cDaysIndex = matrix(1:length(S))
-apply(matrix(31), 1, OptionMC2, option_style, S, X, r, q, volatility, nSims)
-optionMC = apply(cDaysIndex, 1, OptionMC2, option_style, S, X, r, q, volatility, nSims, 500, c("path","sigma","call_value","call_delta","put_value","put_delta"))
-
-##code timing
-#system.time(apply(cDaysIndex, 1, OptionMC2, option_style, S, X, r, q, volatility, nSims, 500, c("path","sigma","call_value","call_delta","put_value","put_delta")))
-#system.time(apply(cDaysIndex, 1, OptionMC2, option_style, S, X, r, q, volatility, nSims, 500, c("call_value","call_delta")))
-
-par(mfrow=c(5,6))
-for (i in 1:length(optionMC)) {
-#	mean of existing price path
-	if (option_style == "arithmetic") {
-		S_mean = mean(S[1:i])
-	} else if (option_style == "geometric") {
-		S_mean = exp(mean(log(S[1:i])))
-	}	
-	matplot(optionMC[[i]]$path, type='l', xlab=paste("X=", X, ", mean=", round(S_mean,4), ", sigma=", round(optionMC[[i]]$sigma,4), sep=""))
-	title(paste("call value =", round(unlist(optionMC[[i]]["call_value"]),4), "delta =", round(unlist(optionMC[[i]]["call_delta"]),4), "\nput value =", round(unlist(optionMC[[i]]["put_value"]),4), "delta =", round(unlist(optionMC[[i]]["put_delta"]),4), sep=" "))
-}
+S = 100
+nn = OptionMC("geometric", S, X, r, q, cDays, volatility, nSims)
+AsianOption(averageType="geometric", type="call", underlying=S, strike=X, dividendYield=q, riskFreeRate=r, maturity=cDays/365, volatility=volatility)
 
 #============================================================================================================================================================
 # TODO # OptionMC, analytical v.s. numerical, arithmetic v.s. geometric
 #============================================================================================================================================================
-rm(list=ls(all=TRUE)) 
-options(width = 438L)
-library("RQuantLib")
 #--------------------------------------------------- vanilla ---------------------------------------------------
-source(paste(getwd(), "/option_mc.R", sep=""), echo=FALSE, encoding="GBK")
-
 #number of simulation runs
 nSims = 100
 minSteps = 500
@@ -216,37 +168,22 @@ option_style = "vanilla"
 if (option_style == "vanilla") {
 #	vanilla options
 	option_call = EuropeanOption("call", S, X, q, r, cDays/365, volatility)		
-	option_put = EuropeanOption("put", S, X, q, r, cDays/365, volatility)
+	option_put  = EuropeanOption("put",  S, X, q, r, cDays/365, volatility)
 } else if (option_style == "geometric") {
 	option_call = AsianOption(averageType="geometric", type="call", underlying=S, strike=X, dividendYield=q, riskFreeRate=r, maturity=cDays/365, volatility=volatility)	
-	option_put = AsianOption(averageType="geometric", type="put", underlying=S, strike=X, dividendYield=q, riskFreeRate=r, maturity=cDays/365, volatility=volatility)	
+	option_put  = AsianOption(averageType="geometric", type="put",  underlying=S, strike=X, dividendYield=q, riskFreeRate=r, maturity=cDays/365, volatility=volatility)	
 } 
 
 option = list(call=option_call, put=option_put)
 
-##numerical method, mapply()
-#optionMC = mapply(OptionMC, rep(option_style,100), S, X, r, q, cDays, volatility, nSims, minSteps, USE.NAMES=FALSE)
-
-#numerical method, apply()
-##rValue = c("sigma", "call_value", "call_delta", "put_value", "put_delta")
-#optionMC = apply(matrix(rep(option_style,avgRuns)), 1, OptionMC, S, X, r, q, cDays, volatility, nSims, minSteps, rValue)
-
 #numerical method, "optionMC_vec" function
-optionMC_vec = OptionMC_vec(option_style, S, X, r, q, cDays, volatility, nSims, minSteps, avgRuns, c("sigma","call_value","call_delta","put_value","put_delta","call_vega","put_vega"))
+optionMC_vec = OptionMCv(option_style, S, X, r, q, cDays, volatility, nSims, minSteps, avgRuns)
 
-par(mfrow=c(3,7))
-
+par(mfrow=c(3,3))
 for (i in c("call", "put")) {
 	for (j in c("value", "delta", "vega")) {
-##		numerical method, mapply()
-#		g_vec = as.vector(unlist(optionMC[paste(i,j,sep="_"),]))	
-		
-##		numerical method, apply()
-#		g_vec = as.vector(sapply(optionMC, function(x){unlist(x[paste(i,j,sep="_")])}, simplify=TRUE))
-		
 #		#numerical method, "optionMC_vec" function
-		g_vec = optionMC_vec[["data"]][,paste(i,j,sep="_")]
-		
+		g_vec = optionMC_vec[["data"]][,paste(i,j,sep="_")]		
 #		gf is a measure of the simulation results, smaller the value better the results
 		gf = 10000 * (mean(g_vec) / unlist(option[[i]][j]) - 1)		
 		plot(g_vec, col="blue", xlab=paste("analytic",j,"=",round(unlist(option[[i]][j]),4),sep=" "), ylab=paste(option_style,i,"option",sep=" "))			
@@ -256,15 +193,8 @@ for (i in c("call", "put")) {
 	}
 }
 
-##numerical method, mapply()
-#sigma_vec = as.vector(unlist(optionMC["sigma",]))
-
-##numerical method, apply()
-#sigma_vec = as.vector(sapply(optionMC, function(x){unlist(x["sigma"])}, simplify=TRUE))
-
 #numerical method, "optionMC_vec" function
 sigma_vec = optionMC_vec[["data"]][, "sigma"]
-		
 plot(sigma_vec, col="blue", xlab=paste("volatility =", volatility, sep=" "))
 title(paste("MC sigma =", round(mean(sigma_vec),4), "(mean)", round(sd(sigma_vec),4), "(sd)", sep=" "))	
 abline(h=mean(sigma_vec), col="blue", pch=22, lty=2)
@@ -274,7 +204,7 @@ legend("bottomleft", legend=c(paste("nSims=",nSims,sep=""),paste("cDays=",cDays,
 #--------------------------------------------------- arithmetic v.s. geometric ---------------------------------------------------
 #analytical method
 option_call = AsianOption(averageType="geometric", type="call", underlying=S, strike=X, dividendYield=q, riskFreeRate=r, maturity=cDays/365, volatility=volatility)	
-option_put = AsianOption(averageType="geometric", type="put", underlying=S, strike=X, dividendYield=q, riskFreeRate=r, maturity=cDays/365, volatility=volatility)	
+option_put  = AsianOption(averageType="geometric", type="put",  underlying=S, strike=X, dividendYield=q, riskFreeRate=r, maturity=cDays/365, volatility=volatility)	
 option_geometric = list(call=option_call, put=option_put)
 
 ##numerical method
@@ -282,9 +212,10 @@ option_geometric = list(call=option_call, put=option_put)
 #optionMC_arithmetic = mapply(OptionMC, rep("arithmetic",avgRuns), S, X, r, q, cDays, volatility, nSims, USE.NAMES=FALSE)
 
 #numerical method, "optionMC_vec" function
-optionMC_vec_geometric  = OptionMC_vec("geometric", S, X, r, q, cDays, volatility, nSims, minSteps, avgRuns, c("sigma","call_value","call_delta","put_value","put_delta","call_vega","put_vega"))
-optionMC_vec_arithmetic = OptionMC_vec("arithmetic", S, X, r, q, cDays, volatility, nSims, minSteps, avgRuns, c("sigma","call_value","call_delta","put_value","put_delta","call_vega","put_vega"))
+optionMC_vec_geometric  = OptionMCv("geometric",  S, X, r, q, cDays, volatility, nSims, minSteps, avgRuns)
+optionMC_vec_arithmetic = OptionMCv("arithmetic", S, X, r, q, cDays, volatility, nSims, minSteps, avgRuns)
 
+par(mfrow=c(3,3))
 for (i in c("call", "put")) {
 	for (j in c("value", "delta", "vega")) {
 ##		numerical method		
@@ -334,19 +265,20 @@ X_vec = S * (1 + seq(-20,20,1) * 0.005)
 
 #analytical method
 option_call_vec = mapply(AsianOption, "geometric", "call", S, X_vec, q, r, cDays/365, volatility)
-option_put_vec = mapply(AsianOption, "geometric", "put", S, X_vec, q, r, cDays/365, volatility)
+option_put_vec  = mapply(AsianOption, "geometric", "put",  S, X_vec, q, r, cDays/365, volatility)
 option_vec = list(
 		call=list(value=as.vector(unlist(option_call_vec["value",])), delta=as.vector(unlist(option_call_vec["delta",])), vega=as.vector(unlist(option_call_vec["vega",]))), 
 		put =list(value=as.vector(unlist(option_put_vec["value",])),  delta=as.vector(unlist(option_put_vec["delta",])),  vega=as.vector(unlist(option_put_vec["vega",]))))
 
 #numerical method
-optionMC_geometric_vec = mapply(OptionMC_vec, "geometric", S, X_vec, r, q, cDays, volatility, nSims, minSteps, avgRuns)
-optionMC_arithmetic_vec = mapply(OptionMC_vec, "arithmetic", S, X_vec, r, q, cDays, volatility, nSims, minSteps, avgRuns)
+optionMC_geometric_vec  = mapply(OptionMCv, "geometric",  S, X_vec, r, q, cDays, volatility, nSims, minSteps, avgRuns)
+optionMC_arithmetic_vec = mapply(OptionMCv, "arithmetic", S, X_vec, r, q, cDays, volatility, nSims, minSteps, avgRuns)
 
+par(mfrow=c(3,3))
 for (i in c("call", "put")) {
 	for (j in c("value", "delta", "vega")) {
 #		difference between analytical method and numerical method simulated results, for both geometric and arithmetic average price options
-		diff_geometric_temp = as.vector(unlist(optionMC_geometric_vec[paste(i,j,sep="_"),])) - as.vector(unlist(option_vec[[i]][j]))
+		diff_geometric_temp  = as.vector(unlist(optionMC_geometric_vec[paste(i,j,sep="_"),]))  - as.vector(unlist(option_vec[[i]][j]))
 		diff_arithmetic_temp = as.vector(unlist(optionMC_arithmetic_vec[paste(i,j,sep="_"),])) - as.vector(unlist(option_vec[[i]][j]))		
 		ylim = range(c(diff_geometric_temp,diff_arithmetic_temp))
 		plot(X_vec, diff_geometric_temp, col="blue", ylim=ylim, xlab=paste("strike price (underlying=",S,")",sep=""), ylab=paste(i,"option",sep=" "))		

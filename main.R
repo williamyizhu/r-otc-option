@@ -442,17 +442,31 @@ svalue(position_risk_group_obj) = 0.35
 # TODO # menu bar list
 #=======================================================================================================================================
 #----- live data -----
+MdUpdate = function(data) {
+#	get the latest price and set f_atm
+	contract_year_month = svalue(contract_year_month_obj)						
+	wsqdata = w.wsq(paste(underlying,contract_year_month,".",tCalendarList[exchange],sep=""), "rt_latest")	
+	print(wsqdata$Data)
+#	update "f_atm_obj", "f_atm" is updated in main_function()
+	blockHandler(f_atm_obj)
+	svalue(f_atm_obj) = wsqdata$Data$RT_LATEST
+	unblockHandler(f_atm_obj)		
+	main_function()
+}
 aUpdateMarketData = gaction(label="Update Market Data", handler=function(h,...) {
-#			get the latest price and set f_atm
-			contract_year_month = svalue(contract_year_month_obj)						
-			wsqdata = w.wsq(paste(underlying,contract_year_month,".",tCalendarList[exchange],sep=""), "rt_latest")			
-#			update "f_atm_obj", "f_atm" is updated in main_function()
-			blockHandler(f_atm_obj)
-			svalue(f_atm_obj) = wsqdata$Data$RT_LATEST
-			unblockHandler(f_atm_obj)		
-			main_function()
+			MdUpdate()
 		}
 )
+##update market price every second, need to stop timer in "addHandlerUnrealize" before exiting the program
+#md_update_gtimer_obj = gtimer(1000, MdUpdate, data=NULL, one.shot=FALSE, start=FALSE)
+#aMdAutoUpdate = gcheckbox("Auto Update", checked=FALSE, handler=function(h,...) {
+#			if (svalue(h$obj)) {
+#				md_update_gtimer_obj$start_timer()
+#			} else {
+#				md_update_gtimer_obj$stop_timer()
+#			}
+#		}
+#)
 #----- Volatility -----
 #set the reference volatility curve to current volatility curve, .GlobalEnv$paramList[,"reference.XXXX"] = .GlobalEnv$paramList[,"value.XXXX"]
 aSetReference = gaction(label="Set Reference", handler=function(h,...) {
@@ -549,9 +563,10 @@ aPositionUpdate = gaction(label="Update Position", handler=function(h,...) {
 		}
 )
 #----- add menu bar to main window -----
-menu_bar_list = list("Market Data"=list(aUpdateMarketData),
-#		OTC=list(aOptionStyle_Geometric, aOptionStyle_Arithmetic, gseparator(), aGeneratePricing), 
-		Volatility=list(aSetReference, aRevertCurrent, gseparator(), aVolatilitySurface), 
+menu_bar_list = list(
+#		"Market Data"=list(aUpdateMarketData, aMdAutoUpdate),
+		"Market Data"=list(aUpdateMarketData),
+		"Volatility"=list(aSetReference, aRevertCurrent, gseparator(), aVolatilitySurface), 
 		"Market Maker"=list(aOptionStyle_Geometric, aOptionStyle_Arithmetic, gseparator(), aGeneratePricing, gseparator(), aTheoAutoUpdate, aTheoUpdate),
 		"Position & Risk"=list(aPositionGreeks, gseparator(), aPositionAutoUpdate, aPositionUpdate)
 )
@@ -584,6 +599,7 @@ window_save_var = function(h) {
 addHandlerUnrealize(window, handler=function(h,...) {
 			tryCatch({		
 						if (window_save_var(h)) {
+#							md_update_gtimer_obj$stop_timer()							
 							print("Exit Volatility Model Successfully")
 							return(FALSE) # destroy
 						} else {

@@ -20,4 +20,3 @@
 # Run r-otc-option
 0.setwd("/Documents/workspace/r-otc-option") # Set working directory to r-otc-option
 0.source(paste(getwd(), "/main.R", sep=""), echo=FALSE, encoding="GBK")
-

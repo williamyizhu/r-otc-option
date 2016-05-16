@@ -5,9 +5,9 @@
 0. http://mirrors.xmu.edu.cn/CRAN/
 
 # Install R library
-0.Open R console as administrator.
-0.install.packages("gWidgets2").
-0.install.packages("RGtk2").
+0.Open R console as administrator
+0.install.packages("gWidgets2")
+0.install.packages("RGtk2")
 0.install.packages("rgl")
 0.install.packages("RQuantLib")
 0.install.packages("WindR") # used in aUpdateMarketData to update current market price

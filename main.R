@@ -270,7 +270,7 @@ main_function = function(h,...) {
 # TODO # create GUI
 ############################################################################################################################################################
 #read paramters file, which specifies the properties of each control objects
-#fpath = paste(getwd(), "/pricing/", paste("paramList", exchange, underlying, sep="."), ".csv", sep="")
+#fpath = paste(getwd(), "/params/", paste("paramList", exchange, underlying, sep="."), ".csv", sep="")
 fpath = file.choose(new = FALSE)
 fname_vec = unlist(strsplit(basename(fpath), "[.]"))
 exchange = fname_vec[2]
@@ -394,7 +394,7 @@ risk_group_obj = ggroup(horizontal=FALSE, container=position_risk_group_obj, exp
 
 #----- position -----
 #read.csv all entry from the ".csv" file, and display in the gdf, but when export, only export "complete.cases()==TRUE" entry
-fpath = paste(getwd(), "/pricing/", paste("positionList", exchange, underlying, sep="."), ".csv", sep="")
+fpath = paste(getwd(), "/params/", paste("positionList", exchange, underlying, sep="."), ".csv", sep="")
 position_data = read.csv(fpath, header=TRUE, na.strings="NA", sep=",")
 #1).split "position_data" with factor "expiry_month", "position_data" -> temp_list; 
 #2).sort "x" w.r.t "strike_price", drop the first column "expiry_month", set the rownames to "1:dim(x)[1]"
@@ -581,12 +581,12 @@ window_save_var = function(h) {
 	gbd_obj = gbasicdialog(title="Save variables and exit program", parent=h$obj, handler=function(h...) {									
 				save_var_list = (svalue(save_var_list_obj))									
 				if (any(save_var_list=="Parameter")) {
-					fpath = paste(getwd(), "/pricing/", paste("paramList", .GlobalEnv$exchange, .GlobalEnv$underlying, sep="."), ".csv", sep="")
+					fpath = paste(getwd(), "/params./", paste("paramList", .GlobalEnv$exchange, .GlobalEnv$underlying, sep="."), ".csv", sep="")
 					write.csv(.GlobalEnv$paramList, fpath, quote=FALSE, row.names=TRUE)
 					print(paste("Parameter list saved location: ",fpath,sep=""))
 				} 									
 				if (any(save_var_list=="Position")) {
-					fpath = paste(getwd(), "/pricing/", paste("positionList", .GlobalEnv$exchange, .GlobalEnv$underlying, sep="."), ".csv", sep="")					
+					fpath = paste(getwd(), "/params/", paste("positionList", .GlobalEnv$exchange, .GlobalEnv$underlying, sep="."), ".csv", sep="")					
 					temp = do.call("rbind",.GlobalEnv$position_list)[c("expiry_month","selected","strike_price","type","style","position")] # discard other columns, e.g., delta, vega, etc.
 					write.csv(temp[complete.cases(temp),], fpath, quote=FALSE, row.names=FALSE) # only export complete.cases()==TRUE entry		
 					print(paste("Position list saved location: ",fpath,sep=""))

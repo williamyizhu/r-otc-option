@@ -15,8 +15,9 @@
 # Install Wind
 0. http://www.wind.com.cn/
 0. http://www.wind.com.cn/NewSite/wft.html
-0. 打开Wind Terminal, 量化-修复插件-修复全部接口
+0. 打开Wind Terminal, 量化-修复插件-修复全部接口（R插件）
 
 # Run r-otc-option
 0. setwd("/Documents/workspace/r-otc-option") # Set working directory to r-otc-option
 0. source(paste(getwd(), "/main.R", sep=""), echo=FALSE, encoding="GBK")
+0. Select a parameter file, e.g., "r-otc-option\params\paramList.SHFE.AL.csv"

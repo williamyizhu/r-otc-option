@@ -71,7 +71,7 @@ system.time(OptionMCv(option_style, S, X, r, q, cDays, volatility, nSims, minSte
 nSims = 1000
 nSteps = 100
 S = 100
-r = 0.05
+r = 0.25
 q = 0
 volatility = 0.25
 
@@ -84,7 +84,7 @@ dt = 1 / 365 / nSteps
 #increase "nSteps" can improve convergence, even with a smaller "nSims" value
 #may need to have at least "cDays*nSims*nSteps=100000" to converge
 vol_vec = vector()
-for (cDays in 30:30) {		
+for (cDays in 365:365) {		
 #	standard normal distribution random number
 	z = rnorm(cDays*nSims*nSteps, mean=0, sd=1)		
 #	generate log-normal return matrix
